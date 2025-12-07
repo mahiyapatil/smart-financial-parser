@@ -283,7 +283,6 @@ z_score = (amount - mean_amount) / stdev_amount
 | **Threshold Type** | Retail ($5K/$2K/$1K) | Financial ($500K/$200K/$100K) |
 
 ### Sample Run Statistics (Retail Dataset)
-
 ```
 Input: 37 transactions (intentionally messy)
 Success Rate: 94.6% (35 parsed, 2 failed gracefully)
@@ -294,7 +293,6 @@ Threshold Detection: RETAIL (avg: $155.46)
 ```
 
 ### Kaggle PaySim Dataset Results (Financial)
-
 ```
 Input: 10,000 transactions (real-world financial data)
 Success Rate: 97.9% (9,791 parsed)
@@ -348,10 +346,23 @@ Detection Rate: 68% (6,617/9,791 transactions)
 
 ---
 
+## Dataset Sources
+
+### Included in Repository
+- `data/raw/transactions_messy.csv` - 37 synthetic transactions for testing
+
+### External Datasets (Not in Git)
+- **Kaggle PaySim Dataset** (470MB) - Download from [Kaggle](https://www.kaggle.com/datasets/ealaxi/paysim1)
+- Run `python convert_kaggle_data.py` after downloading
+
+### Why Large Files Aren't Committed
+Following Git best practices, datasets >10MB are excluded. See benchmark results in `benchmark_results.txt`.
+
+---
+
 ## Technical Implementation
 
 ### Dependencies (Production-Grade Libraries)
-
 ```
 pandas>=2.0.0           # Data manipulation, CSV I/O
 pydantic>=2.0.0         # Type-safe validation schemas
@@ -364,7 +375,6 @@ pytest-cov>=4.1.0       # Coverage analysis
 **Rationale:** Each library chosen for security maturity and industry adoption.
 
 ### Architecture
-
 ```
 src/
 ├── validators.py      # Pydantic schemas (input boundary)
@@ -379,7 +389,6 @@ src/
 ---
 
 ## Installation & Usage
-
 ```bash
 # Setup
 python3 -m venv venv
@@ -404,7 +413,6 @@ pytest tests/ -v --cov=src
 **For before/after data quality analysis, see `DATA_QUALITY_COMPARISON.md`**
 
 ### Expected Output (Retail)
-
 ```
 FINANCIAL TRANSACTION ANALYSIS REPORT
 ======================================================================

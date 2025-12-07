@@ -128,6 +128,18 @@ date,normalized_merchant,merchant_name,amount,currency,category,is_refund,is_ano
 | **Duplicate Detection** | 0% | 100% | +100% |
 | **Anomaly Flagging** | 0% | 100% | +100% |
 
+# Dataset Sources
+
+## Included in Repository
+- `data/raw/transactions_messy.csv` - 37 synthetic transactions for testing
+
+## External Datasets (Not in Git)
+- **Kaggle PaySim Dataset** (470MB) - Download from [Kaggle](https://www.kaggle.com/datasets/ealaxi/paysim1)
+- Run `python convert_kaggle_data.py` after downloading
+
+## Why Large Files Aren't Committed
+Following Git best practices, datasets >10MB are excluded. See benchmark results in `benchmark_results.txt`.
+
 ## Edge Cases Handled
 
 ### Critical Test: "Crushing" Ambiguity
