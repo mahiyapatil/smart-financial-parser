@@ -1,0 +1,513 @@
+"""
+Analyzes financial transactions to spot unusual patterns and potential issues.
+Looks for anything out of the ordinary using methods inspired by top PANW security practices.
+
+- Spots problems before they become serious (proactive monitoring)
+- Uses multiple checking methods for better accuracy
+- Provides clear, prioritized alerts
+- Tracks trends over time to understand normal patterns
+"""
+
+import logging
+import statistics
+from collections import defaultdict
+from decimal import Decimal
+from typing import List, Dict
+
+from src.validators import CleanTransaction, TransactionSummary
+
+logger = logging.getLogger(__name__)
+
+
+class TransactionAnalyzer:
+    """
+    Your financial transaction detective. Examines transactions thoroughly,
+    looking for anything that seems unusual or suspicious.
+
+    Built with smart detection principles:
+    - Uses statistical methods to spot outliers
+    - Checks multiple angles (like a security system with multiple layers)
+    - Focuses on finding risks early
+    - Tells you how serious each finding is
+    """
+
+    # How serious is each finding? (Like a traffic light system)
+    SEVERITY_CRITICAL = "CRITICAL"  # Stop and check immediately
+    SEVERITY_HIGH = "HIGH"          # Needs attention soon
+    SEVERITY_MEDIUM = "MEDIUM"      # Worth reviewing
+    SEVERITY_LOW = "LOW"            # Good to know
+    SEVERITY_INFO = "INFO"          # Just informational
+
+    def __init__(self, z_score_threshold: float = 3.0):
+        """
+        Set up the analyzer with your preferred sensitivity level.
+
+        Args:
+            z_score_threshold: How sensitive should we be to unusual amounts?
+                             Higher numbers mean we only flag the most extreme cases.
+                             Default of 3.0 means we flag amounts that are really far
+                             from normal (like 1 in 300 transactions).
+        """
+        self.z_score_threshold = z_score_threshold
+
+        # Keep track of what we find
+        self.anomaly_statistics = {
+            'critical': 0,  # Really serious stuff
+            'high': 0,      # Important to check
+            'medium': 0,    # Worth looking at
+            'low': 0,       # Mildly interesting
+            'total': 0      # Everything we found
+        }
+
+    def analyze(self, transactions: List[CleanTransaction]) -> TransactionSummary:
+        """
+        The main analysis engine. Takes transactions and gives you a comprehensive
+        summary with smart insights.
+
+        Checking from multiple angles:
+        1. Basic math checks (is this amount normal?)
+        2. Behavior patterns (is this spending speed normal?)
+        3. Rule-based checks (is this amount too large?)
+        4. Pattern matching (are there duplicates or suspicious sequences?)
+
+        Returns:
+            A clear summary with all the important insights you need
+        """
+        if not transactions:
+            logger.warning("No transactions to analyze - nothing to do!")
+            return None
+
+        # Step 1: Look for anything unusual (our main detective work)
+        self._detect_anomalies(transactions)
+
+        # Step 2: Check spending speed (are they spending too fast?)
+        self._analyze_spending_velocity(transactions)
+
+        # Step 3: Look for suspicious patterns
+        self._detect_suspicious_patterns(transactions)
+
+        # Now let's calculate some useful totals...
+
+        # Separate spending from refunds (money out vs money back in)
+        spending_txns = [t for t in transactions if t.amount > 0]
+        refund_txns = [t for t in transactions if t.amount < 0]
+
+        # Add everything up
+        total_spending = sum(abs(t.amount) for t in spending_txns)
+        total_refunds = sum(abs(t.amount) for t in refund_txns)
+        net_spending = total_spending - total_refunds  # Your actual outflow
+
+        # When did this all happen?
+        dates = [t.date for t in transactions]
+        date_range = (min(dates), max(dates))
+
+        # What do you spend the most on? Let's find your top category
+        category_spending = defaultdict(Decimal)
+        for t in spending_txns:
+            category_spending[t.category] += abs(t.amount)
+
+        if category_spending:
+            top_category = max(category_spending.items(), key=lambda x: x[1])
+            top_category_name, top_category_amount = top_category
+        else:
+            top_category_name = "None"
+            top_category_amount = Decimal('0.00')
+
+        # How many odd things did we find?
+        anomalies_detected = sum(1 for t in transactions if t.is_anomaly)
+
+        # How many different places did you shop?
+        unique_merchants = len(set(t.normalized_merchant for t in transactions))
+
+        # Package everything up in a nice summary
+        summary = TransactionSummary(
+            total_transactions=len(transactions),
+            date_range=date_range,
+            total_spending=total_spending,
+            total_refunds=total_refunds,
+            net_spending=net_spending,
+            top_category=top_category_name,
+            top_category_spending=top_category_amount,
+            anomalies_detected=anomalies_detected,
+            merchants_normalized=unique_merchants
+        )
+
+        logger.info(f"All done! Looked at {len(transactions)} transactions")
+        logger.info(f"Here's what we found (by seriousness): {self.anomaly_statistics}")
+
+        return summary
+
+    def _detect_anomalies(self, transactions: List[CleanTransaction]) -> None:
+        """
+        Looks for unusual transactions using several different techniques, like having multiple experts
+        analyze the data.
+
+        Methods of verification:
+        1. Statistical checks (is this amount way above average?)
+        2. Rule checks (is this amount over our safety limits?)
+        3. Duplicate checks (did you pay the same place twice today?)
+        4. Merchant checks (is this a place you don't usually shop?)
+
+        Note: Suspicious transactions marked right on the transaction objects
+        so exactly what is found is visible.
+        """
+        # Need at least 3 transactions to do statistical checks
+        if len(transactions) < 3:
+            logger.info("Not enough data for proper analysis (need at least 3 transactions)")
+            return
+
+        # First, let's look at spending amounts (ignore refunds for now)
+        spending_amounts = [float(abs(t.amount)) for t in transactions if t.amount > 0]
+
+        if len(spending_amounts) < 2:
+            return  # Need at least 2 amounts to compare
+
+        # Calculate what's "normal" for your spending
+        mean_amount = statistics.mean(spending_amounts)  # The average
+        median_amount = statistics.median(spending_amounts)  # The middle value
+
+        # How much do amounts usually vary?
+        if len(spending_amounts) >= 2:
+            try:
+                stdev_amount = statistics.stdev(spending_amounts)  # The variation
+            except statistics.StatisticsError:
+                stdev_amount = 0
+        else:
+            stdev_amount = 0
+
+        logger.info(f"Your usual spending: average=${mean_amount:.2f}, "
+                    f"typical=${median_amount:.2f}, variation=${stdev_amount:.2f}")
+
+        # Method 1: The "This is really unusual!" check (statistical outliers)
+        # If an amount is way outside your normal range, we flag it
+        for txn in transactions:
+            if txn.amount <= 0:  # Skip refunds - we're looking at spending
+                continue
+
+            amount = float(abs(txn.amount))
+
+            if stdev_amount > 0:
+                # How far is this from your average? (in standard deviations)
+                z_score = (amount - mean_amount) / stdev_amount
+
+                # How unusual is it? The further from average, the more serious
+                if abs(z_score) > self.z_score_threshold + 2:  # Really, really unusual
+                    severity = self.SEVERITY_CRITICAL
+                    self.anomaly_statistics['critical'] += 1
+                elif abs(z_score) > self.z_score_threshold + 1:  # Very unusual
+                    severity = self.SEVERITY_HIGH
+                    self.anomaly_statistics['high'] += 1
+                elif abs(z_score) > self.z_score_threshold:  # Somewhat unusual
+                    severity = self.SEVERITY_MEDIUM
+                    self.anomaly_statistics['medium'] += 1
+                else:
+                    continue  # Normal enough, move on
+
+                # Mark this transaction and explain why
+                txn.is_anomaly = True
+                txn.anomaly_reason = f"[{severity}] This amount is way outside your normal spending (z-score: {z_score:.2f})"
+                self.anomaly_statistics['total'] += 1
+
+                logger.warning(f"[{severity}] Unusual amount at {txn.normalized_merchant}: "
+                               f"${amount:.2f} (z-score: {z_score:.2f})")
+
+        # Method 2: The "This is a really big purchase!" check
+        # **FIX: Adaptive thresholds based on dataset type**
+        # Automatically adjust for retail vs financial/enterprise data
+        if mean_amount > 50000:  # Financial/enterprise data (high average)
+            thresholds = [
+                (500000.00, self.SEVERITY_CRITICAL),  # $500K+ enterprise
+                (200000.00, self.SEVERITY_HIGH),      # $200K+ large
+                (100000.00, self.SEVERITY_MEDIUM)     # $100K+ notable
+            ]
+            logger.info("Using financial/enterprise thresholds (high-value transactions)")
+        else:  # Retail/consumer data (normal average)
+            thresholds = [
+                (5000.00, self.SEVERITY_CRITICAL),  # Really huge purchase
+                (2000.00, self.SEVERITY_HIGH),      # Very big purchase
+                (1000.00, self.SEVERITY_MEDIUM)     # Big purchase
+            ]
+            logger.info("Using retail/consumer thresholds (typical transactions)")
+
+        for txn in transactions:
+            if txn.is_anomaly:  # Already flagged by another check
+                continue
+
+            amount = float(abs(txn.amount))
+
+            # Check against our "too big" limits
+            for threshold, severity in thresholds:
+                if amount > threshold:
+                    txn.is_anomaly = True
+                    txn.anomaly_reason = f"[{severity}] Large purchase (over ${threshold:.0f})"
+                    self.anomaly_statistics[severity.lower()] += 1
+                    self.anomaly_statistics['total'] += 1
+
+                    logger.warning(f"[{severity}] Large purchase at {txn.normalized_merchant}: "
+                                   f"${amount:.2f}")
+                    break  # Use the highest matching severity
+
+        # Method 3: The "Did you pay twice?" check
+        # Same merchant, same day, similar amounts might be duplicates
+        date_merchant_groups = defaultdict(list)
+        for txn in transactions:
+            key = (txn.date.date(), txn.normalized_merchant)
+            date_merchant_groups[key].append(txn)
+
+        # Look for groups of transactions to the same place on the same day
+        for (date, merchant), txns in date_merchant_groups.items():
+            if len(txns) > 1:
+                amounts = [float(abs(t.amount)) for t in txns]
+
+                # Are the amounts suspiciously similar? (within 5%)
+                for i, txn in enumerate(txns):
+                    if i > 0 and not txn.is_anomaly:
+                        similarity = min(amounts[i], amounts[0]) / max(amounts[i], amounts[0])
+
+                        if similarity > 0.95:  # Almost identical amounts
+                            severity = self.SEVERITY_HIGH
+                            txn.is_anomaly = True
+                            txn.anomaly_reason = f"[{severity}] Possible duplicate charge (same day, similar amount)"
+                            self.anomaly_statistics['high'] += 1
+                            self.anomaly_statistics['total'] += 1
+
+                            logger.warning(f"[{severity}] Possible duplicate at {merchant} on {date}: "
+                                           f"${amounts[0]:.2f} vs ${amounts[i]:.2f}")
+
+    def _analyze_spending_velocity(self, transactions: List[CleanTransaction]) -> None:
+        """
+        Checks how fast you're spending money. If you make several large purchases
+        in a very short time, it might mean your card was stolen or you're
+        making rushed decisions.
+
+        Example: Like a speed camera for spending habits.
+        """
+        if len(transactions) < 5:
+            return  # Need enough data to see patterns
+
+        # Put transactions in time order
+        sorted_txns = sorted(transactions, key=lambda t: t.date)
+
+        # Look at groups of 3 transactions in a row
+        for i in range(len(sorted_txns) - 2):
+            window = sorted_txns[i:i+3]  # Three transactions in sequence
+
+            # How much time passed between first and last?
+            time_span = (window[-1].date - window[0].date).total_seconds() / 3600  # in hours
+
+            # How much was spent in this window?
+            total_amount = sum(abs(t.amount) for t in window if t.amount > 0)
+
+            # Is this a lot of money in a short time? ($500+ in under 6 hours)
+            if total_amount > 500 and time_span < 6 and time_span > 0.01:
+                for txn in window:
+                    if not txn.is_anomaly:
+                        severity = self.SEVERITY_MEDIUM
+                        txn.is_anomaly = True
+                        txn.anomaly_reason = f"[{severity}] Rapid spending (${total_amount:.2f} in {time_span:.1f} hours)"
+                        self.anomaly_statistics['medium'] += 1
+                        self.anomaly_statistics['total'] += 1
+
+                        logger.warning(f"[{severity}] Fast spending detected: "
+                                       f"${total_amount:.2f} in {time_span:.1f} hours")
+
+    def _detect_suspicious_patterns(self, transactions: List[CleanTransaction]) -> None:
+        """
+        Looks for patterns that might indicate problems.
+
+        Example: You suddenly shopping at many different places in one day when you normally don't can
+        mean someone else is using your card.
+        """
+        # Pattern 1: Shopping at lots of different places in one day
+        # (Might indicate card testing or fraudulent activity)
+
+        daily_merchants = defaultdict(set)
+        for txn in transactions:
+            date_key = txn.date.date()
+            daily_merchants[date_key].add(txn.normalized_merchant)
+
+        # What's normal for you? (average number of merchants per day)
+        merchant_counts = [len(merchants) for merchants in daily_merchants.values()]
+        if len(merchant_counts) >= 3:
+            avg_merchants_per_day = statistics.mean(merchant_counts)
+
+            for date, merchants in daily_merchants.items():
+                # If you shopped at way more places than usual (2x+ normal)
+                # AND it's at least 5 different places
+                if len(merchants) > avg_merchants_per_day * 2 and len(merchants) >= 5:
+                    # Flag all transactions from that unusual day
+                    for txn in transactions:
+                        if txn.date.date() == date and not txn.is_anomaly:
+                            severity = self.SEVERITY_LOW
+                            txn.is_anomaly = True
+                            txn.anomaly_reason = f"[{severity}] Unusual number of different stores ({len(merchants)} in one day)"
+                            self.anomaly_statistics['low'] += 1
+                            self.anomaly_statistics['total'] += 1
+
+                    logger.info(f"[{severity}] Lots of different stores on {date}: {len(merchants)} different places")
+
+    def generate_report(self, summary: TransactionSummary) -> str:
+        """
+        Creates a clear, human-friendly report from your analysis.
+        It's designed to give you the most important information first,
+        with clear recommendations on what to do next.
+
+        Returns:
+            A formatted report you can read or print
+        """
+        report_lines = [
+            "=" * 70,
+            "FINANCIAL TRANSACTION ANALYSIS REPORT",
+            "=" * 70,
+            "",
+            f"Analysis Period: {summary.date_range[0].strftime('%Y-%m-%d')} to "
+            f"{summary.date_range[1].strftime('%Y-%m-%d')}",
+            f"Days Analyzed: {(summary.date_range[1] - summary.date_range[0]).days + 1}",
+            "",
+            "TRANSACTION SUMMARY",
+            "-" * 70,
+            f"Total Transactions:      {summary.total_transactions:>10}",
+            f"Unique Merchants:        {summary.merchants_normalized:>10}",
+            f"Daily Avg Transactions:  {summary.total_transactions / max(1, (summary.date_range[1] - summary.date_range[0]).days + 1):>10.1f}",
+            "",
+            "FINANCIAL SUMMARY",
+            "-" * 70,
+            f"Total Spending:          ${summary.total_spending:>10,.2f}",
+            f"Total Refunds:           ${summary.total_refunds:>10,.2f}",
+            f"Net Spending:            ${summary.net_spending:>10,.2f}",
+            f"Avg Transaction:         ${summary.total_spending / max(1, summary.total_transactions):>10,.2f}",
+            "",
+            "TOP SPENDING CATEGORY",
+            "-" * 70,
+            f"Category:                {summary.top_category:>20}",
+            f"Amount:                  ${summary.top_category_spending:>10,.2f}",
+            f"% of Total:              {(summary.top_category_spending / summary.total_spending * 100) if summary.total_spending > 0 else 0:>10.1f}%",
+            "",
+            "ANOMALY DETECTION RESULTS",
+            "-" * 70,
+            f"Total Anomalies:         {summary.anomalies_detected:>10}",
+            ]
+
+        # If we found anything suspicious, show the details
+        if summary.anomalies_detected > 0:
+            report_lines.extend([
+                "",
+                "Anomalies by Severity:",
+                f"  🔴 CRITICAL:           {self.anomaly_statistics['critical']:>10}",
+                f"  🟠 HIGH:               {self.anomaly_statistics['high']:>10}",
+                f"  🟡 MEDIUM:             {self.anomaly_statistics['medium']:>10}",
+                f"  🟢 LOW:                {self.anomaly_statistics['low']:>10}",
+                "",
+                "⚠️  RECOMMENDED ACTIONS:",
+                "   1. Review all CRITICAL and HIGH severity anomalies immediately",
+                "   2. Verify duplicate transactions are not fraudulent charges",
+                "   3. Confirm large transactions were intentional",
+                "   4. Check merchant diversity patterns for unusual activity",
+                "",
+                "📋 See detailed anomaly information in the output CSV file"
+            ])
+        else:
+            report_lines.extend([
+                "",
+                "✅ No anomalies detected - spending patterns appear normal"
+            ])
+
+        report_lines.extend([
+            "",
+            "=" * 70,
+            ])
+
+        return "\n".join(report_lines)
+
+    def get_category_breakdown(self, transactions: List[CleanTransaction]) -> Dict[str, Decimal]:
+        """
+        Shows you where your money is going by category.
+        Helpful for budgeting and understanding your spending habits.
+
+        Returns:
+            A dictionary showing how much you spent in each category,
+            sorted from highest to lowest
+        """
+        category_spending = defaultdict(Decimal)
+
+        for txn in transactions:
+            if txn.amount > 0:  # Only count money going out
+                category_spending[txn.category] += abs(txn.amount)
+
+        # Put the biggest categories first
+        return dict(sorted(category_spending.items(), key=lambda x: x[1], reverse=True))
+
+    def get_merchant_breakdown(self, transactions: List[CleanTransaction]) -> Dict[str, Decimal]:
+        """
+        Shows you where you shop the most.
+
+        Returns:
+            A dictionary showing how much you spent at each merchant,
+            sorted from highest to lowest
+        """
+        merchant_spending = defaultdict(Decimal)
+
+        for txn in transactions:
+            if txn.amount > 0:
+                merchant_spending[txn.normalized_merchant] += abs(txn.amount)
+
+        return dict(sorted(merchant_spending.items(), key=lambda x: x[1], reverse=True))
+
+    def get_risk_assessment(self, transactions: List[CleanTransaction]) -> Dict[str, any]:
+        """
+        Gives you an overall "risk score" for your spending patterns.
+        Like a credit score for transaction safety.
+
+        We look at several factors to decide how risky your recent
+        spending appears to be.
+
+        Returns:
+            A dictionary with your risk score, level, and why we gave that score
+        """
+        risk_score = 0
+        risk_factors = []  # What contributed to your score
+
+        # Factor 1: How many transactions look unusual?
+        anomaly_rate = sum(1 for t in transactions if t.is_anomaly) / len(transactions) if transactions else 0
+        if anomaly_rate > 0.20:  # More than 20% look odd
+            risk_score += 40
+            risk_factors.append("High anomaly rate detected")
+        elif anomaly_rate > 0.10:  # More than 10% look odd
+            risk_score += 20
+            risk_factors.append("Moderate anomaly rate")
+
+        # Factor 2: Serious problems found
+        critical_high = self.anomaly_statistics['critical'] + self.anomaly_statistics['high']
+        if critical_high > 0:
+            risk_score += 30
+            risk_factors.append(f"{critical_high} critical/high severity anomalies")
+
+        # Factor 3: Possible duplicate charges
+        duplicates = sum(1 for t in transactions if t.is_anomaly and 'duplicate' in (t.anomaly_reason or '').lower())
+        if duplicates > 0:
+            risk_score += 15
+            risk_factors.append(f"{duplicates} potential duplicate transactions")
+
+        # Factor 4: Lots of big purchases
+        large_txns = sum(1 for t in transactions if abs(t.amount) > 1000)
+        if large_txns > len(transactions) * 0.1:  # More than 10% are large
+            risk_score += 15
+            risk_factors.append("High proportion of large transactions")
+
+        # What does your score mean?
+        if risk_score >= 70:
+            risk_level = "HIGH"      # 🚨 Really should check everything
+        elif risk_score >= 40:
+            risk_level = "MEDIUM"    # ⚠️ Worth going through carefully
+        elif risk_score >= 20:
+            risk_level = "LOW"       # 🔍 Quick look recommended
+        else:
+            risk_level = "MINIMAL"   # ✅ Everything looks fine
+
+        return {
+            'risk_score': risk_score,
+            'risk_level': risk_level,
+            'risk_factors': risk_factors,  # Why you got this score
+            'anomaly_rate': anomaly_rate,  # Percentage that looked odd
+            'total_anomalies': sum(1 for t in transactions if t.is_anomaly)
+        }

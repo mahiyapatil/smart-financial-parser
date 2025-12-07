@@ -1,0 +1,4 @@
+date,normalized_merchant,merchant_name,amount,currency,category,is_refund,is_anomaly,anomaly_reason
+2023-01-15,Amazon,AMAZON.COM,45.99,USD,Shopping,False,False,
+2023-01-17,Uber,UBER *TRIP,12.30,USD,Transportation,False,False,
+2023-01-18,Starbucks,Starbucks,5.50,USD,Food,False,False,

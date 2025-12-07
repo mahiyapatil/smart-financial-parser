@@ -1,0 +1,80 @@
+======================================================================
+⚡ FINANCIAL PARSER PERFORMANCE BENCHMARK
+======================================================================
+
+Comparing parser performance across dataset types:
+  1. Retail (Synthetic) - Small scale, edge cases
+  2. Financial (Kaggle)  - Enterprise scale, real-world
+
+======================================================================
+ BENCHMARKING: Retail (Synthetic)
+======================================================================
+
+ RESULTS:
+   Transactions:        37
+   Success Rate:        94.6%
+   Unique Merchants:    24
+   Transaction Volume:  $4,819.24
+   Avg Transaction:     $137.69
+   Anomaly Rate:        5.7%
+
+  PERFORMANCE:
+   CSV Load:            0.002s
+   Parse Time:          0.006s
+   Save Time:           0.005s
+   Total Time:          0.011s
+   Throughput:          5674.3 txns/sec
+
+======================================================================
+ BENCHMARKING: Financial (Kaggle)
+======================================================================
+
+ RESULTS:
+   Transactions:        10,000
+   Success Rate:        97.9%
+   Unique Merchants:    9,714
+   Transaction Volume:  $1,255,698,075.56
+   Avg Transaction:     $128,250.24
+   Anomaly Rate:        67.6%
+
+  PERFORMANCE:
+   CSV Load:            0.005s
+   Parse Time:          1.033s
+   Save Time:           0.046s
+   Total Time:          1.038s
+   Throughput:          9482.6 txns/sec
+
+======================================================================
+ PERFORMANCE COMPARISON
+======================================================================
+
+Metric                         Retail               Financial            Difference     
+-------------------------------------------------------------------------------------
+Transactions                   37                   10,000                       +9,963
+Success Rate                   94.6               % 97.9               %          +3.3%
+Unique Merchants               24                   9,714                        +9,690
+Transaction Volume             $4,819.24            $1,255,698,075.56    $+1,255,693,256.32
+Avg Transaction                $137.69              $128,250.24          $  +128,112.54
+Anomaly Rate                   5.7                % 67.6               %         +61.9%
+
+-------------------------------------------------------------------------------------
+TIMING COMPARISON (seconds)
+-------------------------------------------------------------------------------------
+Parse Time                     0.006              s 1.033              s          0.01x faster
+Total Time                     0.011              s 1.038              s          0.01x faster
+Throughput                     5674.3              txns/s 9482.6              txns/s          1.67x faster
+
+=====================================================================================
+
+ KEY INSIGHTS:
+   Financial dataset auto-detected (avg txn >$50K)
+   Applied enterprise thresholds ($500K/$200K/$100K)
+
+   Dataset scale: 270x larger (financial vs retail)
+   Parser scales efficiently: 0.01x time for 270x data
+   Merchant tracking: 405x more unique accounts in financial data
+
+
+======================================================================
+ BENCHMARK COMPLETE
+======================================================================

@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+env/
+*.egg-info/
+
+# Large datasets
+data/raw/PS_*.csv
+data/raw/kaggle_*.csv
+*.zip
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+logs/*.log
+!logs/.gitkeep
